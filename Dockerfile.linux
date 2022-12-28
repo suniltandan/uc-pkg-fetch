@@ -13,8 +13,9 @@ RUN yum install -y \
     make patch python2 \
     rh-python36-python
 
-RUN curl -fsSL https://rpm.nodesource.com/setup_lts.x | bash -
+RUN curl -fsSL https://rpm.nodesource.com/setup_16.x | bash -
 RUN yum install -y nodejs
+# RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.34.0/install.sh | bash && nvm install 14.21.1
 RUN npm install -g yarn
 
 COPY . ./
