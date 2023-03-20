@@ -2,6 +2,7 @@ name: Build Node binaries for Windows
 
 on:
   workflow_dispatch:
+  workflow_call:
 
 jobs:
   windows-vs2019:
@@ -10,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target-node: [14, 16, 18]
+        target-node: [14, 16, 18, 19]
         target-arch: [x64, arm64]
 
     steps:

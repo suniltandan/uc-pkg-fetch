@@ -58,8 +58,11 @@ function getConfigureArgs(major: number, targetPlatform: string): string[] {
   // production binaries do NOT take NODE_OPTIONS from end-users
   args.push('--without-node-options');
 
-  // DTrace
-  args.push('--without-dtrace');
+  // The dtrace and etw support was removed in https://github.com/nodejs/node/commit/aa3a572e6bee116cde69508dc29478b40f40551a
+  if (major <= 18) {
+    // DTrace
+    args.push('--without-dtrace');
+  }
 
   // bundled npm package manager
   args.push('--without-npm');
@@ -104,7 +107,7 @@ async function tarFetch(nodeVersion: string) {
   await downloadUrl(`${distUrl}/${tarName}`, archivePath);
 }
 
-async function tarExtract(nodeVersion: string) {
+async function tarExtract(nodeVersion: string, suppressTarOutput: boolean) {
   log.info('Extracting Node.js source archive...');
 
   const tarName = `node-${nodeVersion}.tar.gz`;
@@ -130,7 +133,9 @@ async function tarExtract(nodeVersion: string) {
   const extract = tar.extract(nodePath, {
     strip: 1,
     map: (header) => {
-      log.info(header.name);
+      if (!suppressTarOutput) {
+        log.info(header.name);
+      }
       return header;
     },
   });
@@ -159,6 +164,12 @@ async function applyPatches(nodeVersion: string) {
   }
 }
 
+export async function fetchExtractApply(nodeVersion: string, quietExtraction: boolean) {
+  await tarFetch(nodeVersion);
+  await tarExtract(nodeVersion, quietExtraction);
+  await applyPatches(nodeVersion);
+}
+
 async function compileOnWindows(
   nodeVersion: string,
   targetArch: string,
@@ -168,8 +179,11 @@ async function compileOnWindows(
   const major = getMajor(nodeVersion);
   const config_flags = getConfigureArgs(major, targetPlatform);
 
-  // Event Tracing for Windows
-  args.push('noetw');
+  // The dtrace and etw support was removed in https://github.com/nodejs/node/commit/aa3a572e6bee116cde69508dc29478b40f40551a
+  if (major <= 18) {
+    // Event Tracing for Windows
+    args.push('noetw');
+  }
 
   // Performance counters on Windows
   if (major <= 10) {
@@ -222,6 +236,15 @@ async function compileOnUnix(
 
   if (cpu) {
     args.push('--dest-cpu', cpu);
+  }
+
+  if (targetArch === 'armv7') {
+    const { CFLAGS = '', CXXFLAGS = '' } = process.env;
+    process.env.CFLAGS = `${CFLAGS} -marm -mcpu=cortex-a7`;
+    process.env.CXXFLAGS = `${CXXFLAGS} -marm -mcpu=cortex-a7`;
+
+    args.push('--with-arm-float-abi=hard');
+    args.push('--with-arm-fpu=vfpv3');
   }
 
   if (hostArch !== targetArch) {
@@ -284,19 +307,20 @@ async function compile(
   return compileOnUnix(nodeVersion, targetArch, targetPlatform);
 }
 
+export async function prepBuildPath() {
+  await fs.remove(buildPath);
+  await fs.mkdirp(nodePath);
+  await fs.mkdirp(nodeArchivePath);
+}
+
 export default async function build(
   nodeVersion: string,
   targetArch: string,
   targetPlatform: string,
   local: string
 ) {
-  await fs.remove(buildPath);
-  await fs.mkdirp(nodePath);
-  await fs.mkdirp(nodeArchivePath);
-
-  await tarFetch(nodeVersion);
-  await tarExtract(nodeVersion);
-  await applyPatches(nodeVersion);
+  await prepBuildPath();
+  await fetchExtractApply(nodeVersion, false);
 
   const output = await compile(nodeVersion, targetArch, targetPlatform);
   const outputHash = await hash(output);
